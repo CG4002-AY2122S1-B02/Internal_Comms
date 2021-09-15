@@ -68,17 +68,15 @@ void setup() {
 void loop() {
 
     if (Serial.available()) {
-        Serial.println("Received something from Bluetooth Serial");
-        char packetType = Serial.read();
-        Serial.print("Received: ");
-        Serial.println(packetType);
+        byte packetType = Serial.read();
+
         switch (packetType) {
             case HELLO_PACKET:
                 // Handshake starts from laptop. Reply handshake with ACK
                 startTime = millis();
                 handshakeStart = true;
                 handshakeEnd = false;
-                Serial.write(ACK_PACKET);
+                sendPacket(ACK_PACKET);
                 break;
             case ACK_PACKET:
                 // Received last ACK from laptop. Handshake complete
