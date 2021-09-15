@@ -2,6 +2,7 @@
 
 // * Constants
 #define BAUD_RATE 115200
+#define SAMPLING_PERIOD 20 // 20ms, so 50Hz
 #define HELLO_PACKET 'H'
 #define ACK_PACKET 'A'
 #define DATA_PACKET 'D'
@@ -9,13 +10,23 @@
 #define START_DANCE_PACKET 'S'
 #define TIMESTAMP 'T'
 
-unsigned long startTime;
+// * Time related global variables
+unsigned long currentTime = 0;
+unsigned long previousPacketTime = 0;
 
 unsigned int sequenceNumber = 0;
 
-// Handshake status
+// * Handshake status
 bool handshakeStart = false;
 bool handshakeEnd = false;
+
+// * Data related global variables
+int16_t accelX;
+int16_t accelY;
+int16_t accelZ;
+int16_t rotX;
+int16_t rotY;
+int16_t rotZ;
 
 // *   ______ _    _ _   _  _____
 // *  |  ____| |  | | \ | |/ ____|
@@ -27,6 +38,17 @@ bool handshakeEnd = false;
 // * Calculate CRC8 for checksum
 uint8_t calcCRC8(uint8_t *data, int len) {
     return crc8(data, len);
+}
+
+// ? Read data from sensors (IN THE FUTURE)
+// * Generate fake accelerometer and rotational data
+void readData() {
+    accelX = -6000
+    accelY = 13880
+    accelZ = -1380
+    rotX = 915
+    rotY = -68
+    rotZ = -49
 }
 
 // * ISN, Packet Type, Possible Data, Error Checking
@@ -46,6 +68,12 @@ void sendPacket(char packetType) {
             break;
 
         case DATA_PACKET:
+            Serial.write(sequenceNumber);
+            Serial.write(DATA_PACKET);
+            readData();
+            Serial.write()
+            uint8_t packetSent[8] = {sequenceNumber,  DATA_PACKET};
+            Serial.write(calcCRC8(packetSent, 8));
             break;
 
         case EMG_PACKET:
@@ -73,7 +101,6 @@ void loop() {
         switch (packetType) {
             case HELLO_PACKET:
                 // Handshake starts from laptop. Reply handshake with ACK
-                startTime = millis();
                 handshakeStart = true;
                 handshakeEnd = false;
                 sendPacket(ACK_PACKET);
@@ -85,6 +112,22 @@ void loop() {
                     handshakeEnd = true;
                 }
                 break;
+            // TODO reset packet to handle random disconnections
         }
     }
+
+    // Handshake completed
+    if (handshakeEnd) {
+        currentTime = millis();
+
+        // Interval less than sampling period, do not do anything
+        if (currentTime - previousPacketTime < SAMPLING_PERIOD) {
+            return;
+        }
+
+        // Interval more than sampling period
+        sendPacket(DATA_PACKET);
+        previousPacketTime = currentTime;
+    }
+
 }
