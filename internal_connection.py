@@ -3,11 +3,13 @@
 from time import sleep
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
+import crc8
 
 
 # * Different Packet Types
 HELLO = 'H'
 ACK = 'A'
+RESET = 'R'
 DATA = 'D'
 EMG = 'E'
 START_DANCE = 'S'
@@ -20,10 +22,11 @@ BLE_CHARACTERISTIC_UUID = "0000dfb1-0000-1000-8000-00805f9b34fb"
 
 
 # * Mac Addresses of Bluno Beetles
-BEETLE_1 = 'b0:b1:13:2d:b4:01'
-BEETLE_2 = 'b0:b1:13:2d:b6:55'
+# ! TEMPORARILY COMMENTED OUT FOR TESTING
+# BEETLE_1 = 'b0:b1:13:2d:b4:01'
+# BEETLE_2 = 'b0:b1:13:2d:b6:55'
 BEETLE_3 = 'b0:b1:13:2d:b5:0d'
-ALL_BEETLE_MAC = [BEETLE_1, BEETLE_2, BEETLE_3]
+ALL_BEETLE_MAC = [BEETLE_3]
 
 
 # * Handshake status of Beetles
@@ -76,7 +79,7 @@ class BeetleWrapper():
         counter = 1
         try:
             while not BEETLE_HANDSHAKE_STATUS[self.beetle_periobj.addr]:
-                # ! May throw BTLEException
+                # May throw BTLEException
                 self.serial_characteristic.write(
                     bytes(HELLO, 'utf-8'), withResponse=False)
                 print("%s H packets sent to Beetle %s" %
@@ -86,7 +89,7 @@ class BeetleWrapper():
                 if self.beetle_periobj.waitForNotifications(3):
                     print("Successful connection with %s" %
                           self.beetle_periobj.addr)
-                    # ! May throw BTLEEXcpetion
+                    # May throw BTLEEXcpetion
                     self.serial_characteristic.write(
                         bytes(ACK, 'utf-8'), withResponse=False)
 
@@ -97,6 +100,12 @@ class BeetleWrapper():
             print("Beetle %s disconnected. Attempt reconnection..." %
                   self.beetle_periobj.addr)
             self.reconnect()
+
+    def listenIn(self):
+        while True:
+            if self.beetle_periobj.waitForNotifications(3):
+                continue;
+            print("Listening...")
 
     def reconnect(self):
         print("Attempting reconnection with %s" % self.beetle_periobj.addr)
@@ -112,7 +121,26 @@ class BeetleWrapper():
 
 
 class Initialize:
-    # * Returns a list of bluepy devices that match Beetle's MAC
+
+    # * Utilize MAC address of Beetles and directly create connection with them
+    def start_peripherals():
+        created_beetle_peripherals = []
+        for mac in ALL_BEETLE_MAC:
+            try:
+                # May throw BETLEException
+                print("#DEBUG# Attempting connection to %s" % mac)
+                beetle = Peripheral(mac)
+            except Exception as e:
+                print(
+                    "#DEBUG#: Failed to create peripheral for %s. Exception: %s" % (mac, e))
+                continue
+            
+            beetle.withDelegate(Delegate(mac))
+            created_beetle_peripherals.append(beetle)
+        return created_beetle_peripherals
+
+    # ! DEPRE this was only used for testing
+    # Returns a list of bluepy devices that match Beetle's MAC
     def scan():
         # Initialize scanner to hci0 interface (ensure this interface is bluetooth)
         scanner = Scanner(0)
@@ -124,8 +152,9 @@ class Initialize:
         print('#DEBUG#: %s Beetle found!' % (len(found_beetles)))
         return found_beetles
 
-    # * Devices are a list of ScanEntries that match Beetle's MAC
-    # * Returns a list of created Peripherals for Beetles
+    # ! DEPRE this was only used for testing
+    # Devices are a list of ScanEntries that match Beetle's MAC
+    # Returns a list of created Peripherals for Beetles
     def create_peripherals(devices):
         created_beetle_peripherals = []
         for dev in devices:
@@ -144,13 +173,14 @@ class Initialize:
 
 
 # %%
-devices = Initialize.scan()
-beetle_peripherals = Initialize.create_peripherals(devices)
+beetle_peripherals = Initialize.start_peripherals()
 
 # ! Testing grounds
 test = beetle_peripherals[0]
 test_beetle_class = BeetleWrapper(test)
 test_beetle_class.start_handshake()
+
+test_beetle_class.listenIn()
 
 
 # %%
@@ -160,4 +190,17 @@ test_beetle_class.start_handshake()
 #     for (adtype, desc, value) in dev.getScanData():
 #         print("  %s = %s" % (desc, value))
 
-# scanner = Scanner().withDelegate(ScanDelegate())
+
+# %% 
+# ! Actual main code
+# devices = Initialize.scan()
+# beetle_peripherals = Initialize.create_peripherals(devices)
+
+# All_Beetles = []
+# for beetle in beetle_peripherals:
+#     beetle_obj = BeetleWrapper(beetle)
+#     All_Beetles.append(beetle_obj)
+#     beetle_obj.start_handshake()
+
+# %%
+# test.disconnect()
