@@ -1,4 +1,5 @@
 #include "CRC.h"
+#include "CRC8.h"
 
 // * Constants
 #define BAUD_RATE 115200
@@ -33,6 +34,13 @@ int16_t rotZ;
 
 int16_t emgData;
 
+// * Buffer related
+byte twoByteBuf[2];
+byte fourByteBuf[4];
+
+// * CRC Related
+CRC8 crc;
+
 // *   ______ _    _ _   _  _____
 // *  |  ____| |  | | \ | |/ ____|
 // *  | |__  | |  | |  \| | |
@@ -43,6 +51,22 @@ int16_t emgData;
 // * Calculate CRC8 for checksum
 uint8_t calcCRC8(uint8_t *data, int len) {
     return crc8(data, len);
+}
+
+// * Write 2 byte unsigned int SN to Serial (Little Endian!)
+void writeSNToSerial() {
+    twoByteBuf[1] = sequenceNumber & 255;
+    twoByteBuf[0] = (sequenceNumber >> 8) & 255;
+    Serial.write(twoByteBuf, sizeof(twoByteBuf));
+    crc.add(twoByteBuf, sizeof(twoByteBuf));
+}
+
+// * Write 2 byte signed integer data to Serial (Little Endian!)
+void writeIntToSerial(int16_t data) {
+    twoByteBuf[1] = data & 255;
+    twoByteBuf[0] = (data >> 8) & 255;
+    Serial.write(twoByteBuf, sizeof(twoByteBuf));
+    crc.add(twoByteBuf, sizeof(twoByteBuf));
 }
 
 // * Reset Beetle Programmatically
@@ -70,53 +94,67 @@ void readEMGData() {
 // * Total 4 bytes currently
 void sendACKPacket(char packetType) {
 
-    Serial.write(sequenceNumber); // Two bytes SN
-    Serial.write(ACK_PACKET); // One byte packet type
+    writeSNToSerial(); // Two bytes SN and add to CRC
 
-    uint8_t packetSent[2] = {sequenceNumber, ACK_PACKET};
-    Serial.write(calcCRC8(packetSent, 2)); // One byte checksum
+    // One byte packet type and add to CRC
+    Serial.write(ACK_PACKET);
+    crc.add(ACK_PACKET);
 
-    // Increase sequence number everytime a packet is sent out
-    sequenceNumber++;
+    Serial.write(crc.getCRC()); // One byte checksum
+
+    sequenceNumber++; // Increase sequence number after packet is sent out
+    crc.restart(); // Restart crc caclulation
 }
 
-// * Total 20 bytes currently (max)
+// * Total 16 bytes currently (max)
 void sendDataPacket() {
 
-    Serial.write(sequenceNumber); // Two bytes SN
-    Serial.write(DATA_PACKET); // One byte packet type
+    writeSNToSerial(); // Two bytes SN and add to CRC
+
+    // One byte packet type and add to CRC
+    Serial.write(DATA_PACKET);
+    crc.add(DATA_PACKET);
 
     // ! Remember to change this to actual reading of sensors data in the future
     readData();
 
     // 6 bytes accelerometer, 6 bytes rotational
-    Serial.write(accelX);
-    Serial.write(accelY);
-    Serial.write(accelZ);
-    Serial.write(rotX);
-    Serial.write(rotY);
-    Serial.write(rotZ);
+    writeIntToSerial(accelX);
+    writeIntToSerial(accelY);
+    writeIntToSerial(accelZ);
+    writeIntToSerial(rotX);
+    writeIntToSerial(rotY);
+    writeIntToSerial(rotZ);
 
     // TODO add in sending of timestamp
 
-    uint8_t dataPacketSent[8] = {sequenceNumber, accelX, accelY, accelZ, rotX, rotY, rotZ, DATA_PACKET};
-    Serial.write(calcCRC8(dataPacketSent, 8)); // One byte checksum
+    Serial.write(crc.getCRC()); // One byte checksum
+
+    sequenceNumber++;
+    crc.restart();
 }
 
 // * Total 6 bytes
 void sendEMGPacket() {
 
-    Serial.write(sequenceNumber); // Two bytes SN
-    Serial.write(EMG_PACKET); // One byte packet type
+    writeSNToSerial(); // Two bytes SN
+
+    // One byte packet type and add to CRC
+    Serial.write(EMG_PACKET);
+    crc.add(EMG_PACKET);
 
     // ! Remember to change this to actual reading in the future
     readEMGData();
 
     // 2 bytes EMG data
-    Serial.write(emgData);
+    writeIntToSerial(emgData);
 
-    uint8_t emgPacketSent[3] = {sequenceNumber, EMG_PACKET, emgData};
-    Serial.write(calcCRC8(emgPacketSent, 3)); // One byte checksum
+    // TODO add in sending of timestamp
+
+    Serial.write(crc.getCRC()); // One byte checksum
+
+    sequenceNumber++;
+    crc.restart();
 }
 
 // * Initialization
