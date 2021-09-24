@@ -80,7 +80,7 @@ void writeLongToSerial(unsigned long data) {
     fourByteBuf[1] = (data >> 16) & 255;
     fourByteBuf[0] = (data >> 24) & 255;
     Serial.write(fourByteBuf, sizeof(fourByteBuf));
-    crc.add(fourByteBuf, sizeof(fourByte));
+    crc.add(fourByteBuf, sizeof(fourByteBuf));
 }
 
 // * Reset Beetle Programmatically
