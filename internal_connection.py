@@ -3,7 +3,7 @@
 from time import sleep
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
-from crccheck.crc import Crc8Wcdma # This is because the library on Arduino use this
+from crccheck.crc import Crc8 # This is because the library on Arduino use this
 
 
 # * Different Packet Types
@@ -63,10 +63,9 @@ class Delegate(DefaultDelegate):
 
     # * Handles incoming packets from serial comms
     def handleNotification(self, cHandle, data):
-        # TODO route relevant packets to external comms
         # print("#DEBUG#: Printing Raw Data here: %s. Length: %s" % (data, len(data)))
 
-        # Handshake has already completed. Handle data packets
+        # Handshake completed. Handle data packets
         if (BEETLE_HANDSHAKE_STATUS[self.mac_addr]):
             self.buffer += data
 
@@ -80,7 +79,13 @@ class Delegate(DefaultDelegate):
                 if (self.buffer[2] == 69 and len(self.buffer) > 6): # * ASCII Code E (EMG)
                     raw_packet_data = self.buffer[0: 6]
                     parsed_packet_data = struct.unpack('!Hchc', raw_packet_data)
-                    print(parsed_packet_data)
+
+                    if not self.checkCRC(5):
+                        print("#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
+                        BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                        return
+
+                    self.sendDataToUltra96(parsed_packet_data)
                     self.buffer = self.buffer[6:]
                     BEETLE_SEQUENCE_NUMBER[self.mac_addr] += 1
     
@@ -89,8 +94,29 @@ class Delegate(DefaultDelegate):
                 elif (self.buffer[2] == 68 and len(self.buffer) > 16): # * ASCII Code D (DATA)
                     raw_packet_data = self.buffer[0: 16]
                     parsed_packet_data = struct.unpack('!Hchhhhhhc', raw_packet_data)
-                    print(parsed_packet_data)
+
+                    if not self.checkCRC(15):
+                        print("#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
+                        BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                        return
+
+                    self.sendDataToUltra96(parsed_packet_data)
                     self.buffer = self.buffer[16:]
+                    BEETLE_SEQUENCE_NUMBER[self.mac_addr] += 1
+
+
+                # Received Timestamp packet 8 bytes
+                elif (self.buffer[2] == 84 and len(self.buffer) > 8): # * ASCII Code T
+                    raw_packet_data = self.buffer[0: 8]
+                    parsed_packet_data = struct.unpack('!HcLc', raw_packet_data)
+
+                    if not self.checkCRC(7):
+                        print("#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
+                        BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                        return
+
+                    self.sendDataToUltra96(parsed_packet_data)
+                    self.buffer = self.buffer[8:]
                     BEETLE_SEQUENCE_NUMBER[self.mac_addr] += 1
                 
             else:
@@ -106,10 +132,16 @@ class Delegate(DefaultDelegate):
             if (received_packet[1] == b'A' and received_packet[0] == BEETLE_SEQUENCE_NUMBER[self.mac_addr]):
                 BEETLE_HANDSHAKE_STATUS[self.mac_addr] = True
                 BEETLE_SEQUENCE_NUMBER[self.mac_addr] += 1
-                print('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
+                # print('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
 
-    def sendDataToUltra96(data):
-        # ? Change this to external comms code in the future
+    # * Checks checksum by indicating the length of packet used to calculate checksum
+    def checkCRC(self, length):
+        calcChecksum = Crc8.calc(self.buffer[0: length])
+        # print("#DEBUG#: Calculated checksum: %s vs Received: %s" % (calcChecksum, self.buffer[length]))
+        return calcChecksum == self.buffer[length]
+
+    # TODO Change this to external comms code in the future
+    def sendDataToUltra96(self, data):
         print(data)
 
 
