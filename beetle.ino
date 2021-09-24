@@ -5,6 +5,7 @@
 #define BAUD_RATE 115200
 #define SAMPLING_PERIOD 100 // 20ms, so 50Hz
 #define EMG_SAMPLING_PERIOD 10 // 10ms, so 100Hz
+#define TIMESTAMP_PERIOD 5000 // 5 seconds, so 0.2Hz
 #define HELLO_PACKET 'H'
 #define ACK_PACKET 'A'
 #define RESET_PACKET 'R'
@@ -17,6 +18,7 @@
 unsigned long currentTime = 0;
 unsigned long previousPacketTime = 0;
 unsigned long previousEMGPacketTime = 0;
+unsigned long previousTimestampPacketTime = 0;
 
 unsigned int sequenceNumber = 0;
 
@@ -41,12 +43,14 @@ byte fourByteBuf[4];
 // * CRC Related
 CRC8 crc;
 
-// *   ______ _    _ _   _  _____
-// *  |  ____| |  | | \ | |/ ____|
-// *  | |__  | |  | |  \| | |
-// *  |  __| | |  | | . ` | |
-// *  | |    | |__| | |\  | |____
-// *  |_|     \____/|_| \_|\_____|
+// *   _    _      _                   ______
+// * | |  | |    | |                 |  ____|
+// * | |__| | ___| |_ __   ___ _ __  | |__ _   _ _ __   ___
+// * |  __  |/ _ \ | '_ \ / _ \ '__| |  __| | | | '_ \ / __|
+// * | |  | |  __/ | |_) |  __/ |    | |  | |_| | | | | (__
+// * |_|  |_|\___|_| .__/ \___|_|    |_|   \__,_|_| |_|\___|
+// *               | |
+// *               |_|
 
 // * Calculate CRC8 for checksum
 uint8_t calcCRC8(uint8_t *data, int len) {
@@ -69,13 +73,29 @@ void writeIntToSerial(int16_t data) {
     crc.add(twoByteBuf, sizeof(twoByteBuf));
 }
 
+// * Write 4 byte unsigned long (timestamp) to Serial
+void writeLongToSerial(unsigned long data) {
+    fourByteBuf[3] = data & 255;
+    fourByteBuf[2] = (data >> 8) & 255;
+    fourByteBuf[1] = (data >> 16) & 255;
+    fourByteBuf[0] = (data >> 24) & 255;
+    Serial.write(fourByteBuf, sizeof(fourByteBuf));
+    crc.add(fourByteBuf, sizeof(fourByte));
+}
+
 // * Reset Beetle Programmatically
 void (* resetBeetle) (void) = 0;
 
 // ? Read data from sensors (IN THE FUTURE)
 // * Generate fake accelerometer and rotational data
 void readData() {
-    // TODO random generation of data
+    // ? Random generation of data
+    // accelX = random(-32768, 32767);
+    // accelY = random(-32768, 32767);
+    // accelZ = random(-32768, 32767);
+    // rotX = random(-32768, 32767);
+    // rotY = random(-32768, 32767);
+    // rotZ = random(-32768, 32767);
     accelX = -6000;
     accelY = 13880;
     accelZ = -1380;
@@ -87,9 +107,18 @@ void readData() {
 // ? Read data from EMG sensors (IN THE FUTURE)
 // * Generate fake EMG data
 void readEMGData() {
-    // TODO random generation of data
+    // ? Random generation of data
+    // emgData = random(0, 1023)
     emgData = 200;
 }
+
+// *   _____ ______ _   _ _____    ______ _    _ _   _  _____
+// *  / ____|  ____| \ | |  __ \  |  ____| |  | | \ | |/ ____|
+// * | (___ | |__  |  \| | |  | | | |__  | |  | |  \| | |
+// *  \___ \|  __| | . ` | |  | | |  __| | |  | | . ` | |
+// *  ____) | |____| |\  | |__| | | |    | |__| | |\  | |____
+// * |_____/|______|_| \_|_____/  |_|     \____/|_| \_|\_____|
+//
 
 // * Total 4 bytes currently
 void sendACKPacket(char packetType) {
@@ -106,7 +135,7 @@ void sendACKPacket(char packetType) {
     crc.restart(); // Restart crc caclulation
 }
 
-// * Total 16 bytes currently (max)
+// * Total 16 bytes currently
 void sendDataPacket() {
 
     writeSNToSerial(); // Two bytes SN and add to CRC
@@ -125,8 +154,6 @@ void sendDataPacket() {
     writeIntToSerial(rotX);
     writeIntToSerial(rotY);
     writeIntToSerial(rotZ);
-
-    // TODO add in sending of timestamp
 
     Serial.write(crc.getCRC()); // One byte checksum
 
@@ -149,13 +176,37 @@ void sendEMGPacket() {
     // 2 bytes EMG data
     writeIntToSerial(emgData);
 
-    // TODO add in sending of timestamp
+    Serial.write(crc.getCRC()); // One byte checksum
+
+    sequenceNumber++;
+    crc.restart();
+}
+
+// * Total 8 bytes
+void sendTimestampPacket() {
+
+    writeSNToSerial(); // Two bytes SN
+
+    // One byte packet type and add to CRC
+    Serial.write(TIMESTAMP);
+    crc.add(TIMESTAMP);
+
+    // 4 bytes timestamp data
+    writeLongToSerial(currentTime);
 
     Serial.write(crc.getCRC()); // One byte checksum
 
     sequenceNumber++;
     crc.restart();
 }
+
+
+// *                    _       _               ______
+// *     /\           | |     (_)             |  ____|
+// *    /  \   _ __ __| |_   _ _ _ __   ___   | |__ _   _ _ __   ___
+// *   / /\ \ | '__/ _` | | | | | '_ \ / _ \  |  __| | | | '_ \ / __|
+// *  / ____ \| | | (_| | |_| | | | | | (_) | | |  | |_| | | | | (__
+// * /_/    \_\_|  \__,_|\__,_|_|_| |_|\___/  |_|   \__,_|_| |_|\___|
 
 // * Initialization
 void setup() {
@@ -166,6 +217,7 @@ void setup() {
     currentTime = 0;
     previousPacketTime = 0;
     previousEMGPacketTime = 0;
+    previousTimestampPacketTime = 0;
 }
 
 void loop() {
@@ -210,6 +262,12 @@ void loop() {
             readData();
             sendDataPacket();
             previousPacketTime = currentTime;
+        }
+
+        // Send timestamp packet for synchronisation
+        if (currentTime - previousTimestampPacketTime > TIMESTAMP_PERIOD) {
+            sendTimestampPacket();
+            previousTimestampPacketTime = currentTime;
         }
 
     }
