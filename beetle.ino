@@ -12,7 +12,7 @@
 #define DATA_PACKET 'D'
 #define EMG_PACKET 'E'
 #define START_DANCE_PACKET 'S' // TODO yet to be implemented
-#define TIMESTAMP 'T' // TODO yet to be implemented
+#define TIMESTAMP 'T'
 
 // * Time related global variables
 unsigned long currentTime = 0;
