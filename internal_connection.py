@@ -3,7 +3,8 @@
 from time import sleep
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
-from crccheck.crc import Crc8 # This is because the library on Arduino use this
+from crccheck.crc import Crc8
+import threading
 
 
 # * Different Packet Types
@@ -22,32 +23,35 @@ BLE_CHARACTERISTIC_UUID = "0000dfb1-0000-1000-8000-00805f9b34fb"
 
 
 # * Mac Addresses of Bluno Beetles
-# ! TEMPORARILY COMMENTED OUT FOR TESTING
 # BEETLE_1 = 'b0:b1:13:2d:b4:01'
 # BEETLE_2 = 'b0:b1:13:2d:b6:55'
-BEETLE_3 = 'b0:b1:13:2d:b5:0d'
-ALL_BEETLE_MAC = [BEETLE_3]
+# BEETLE_3 = 'b0:b1:13:2d:b5:0d'
+TEMP_BEETLE = 'b0:b1:13:2d:d4:ca'
+ALL_BEETLE_MAC = [TEMP_BEETLE]
 
 
 # * Handshake status of Beetles
 BEETLE_HANDSHAKE_STATUS = {
     # BEETLE_1: False,
     # BEETLE_2: False,
-    BEETLE_3: False
+    # BEETLE_3: False,
+    TEMP_BEETLE: False
 }
 
 # * Requesting Reset status of Beetles
 BEETLE_REQUEST_RESET_STATUS = {
     # BEETLE_1: False,
     # BEETLE_2: False,
-    BEETLE_3: False
+    # BEETLE_3: False,
+    TEMP_BEETLE: False
 }
 
 # * Sequence number of Beetles
 BEETLE_SEQUENCE_NUMBER = {
     # BEETLE_1: 0,
     # BEETLE_2: 0,
-    BEETLE_3: 0
+    # BEETLE_3: 0,
+    TEMP_BEETLE: 0
 }
 
 
@@ -145,13 +149,19 @@ class Delegate(DefaultDelegate):
         print(data)
 
 
-class BeetleWrapper():
+class BeetleThread(threading.Thread):
     def __init__(self, beetle_peripheral_object):
+        threading.Thread.__init__(self)
+
         self.beetle_periobj = beetle_peripheral_object
         self.serial_service = self.beetle_periobj.getServiceByUUID(
             BLE_SERVICE_UUID)
         self.serial_characteristic = self.serial_service.getCharacteristics()[
             0]
+
+    def run(self):
+        self.start_handshake()
+        self.listenIn()
 
     # * Initiate the start of handshake sequence with Beetle
     def start_handshake(self):
@@ -286,25 +296,19 @@ class Initialize:
 
 
 # %%
-# ! Testing Grounds 1
-beetle_peripherals = Initialize.start_peripherals()
+# ! Testing Grounds 
+# beetle_peripherals = Initialize.start_peripherals()
 
-test = beetle_peripherals[0]
-test_beetle_class = BeetleWrapper(test)
+# test = beetle_peripherals[0]
+# test_beetle_class = BeetleThread(test)
 
-# %%
-# ! Testing Grounds 2
-test_beetle_class.start_handshake()
+# test_beetle_class.start_handshake()
 
-test_beetle_class.listenIn()
+# test_beetle_class.listenIn()
 
 # %% 
 # ! Actual main code
-# devices = Initialize.scan()
-# beetle_peripherals = Initialize.create_peripherals(devices)
-
-# All_Beetles = []
-# for beetle in beetle_peripherals:
-#     beetle_obj = BeetleWrapper(beetle)
-#     All_Beetles.append(beetle_obj)
-#     beetle_obj.start_handshake()
+if __name__ == '__main__':
+    beetle_peripherals = Initialize.start_peripherals()
+    for found_beetle in beetle_peripherals:
+        BeetleThread(found_beetle).start()
