@@ -236,8 +236,6 @@ void loop() {
                 if (handshakeStart) {
                     handshakeStart = false;
                     handshakeEnd = true;
-                    previousPacketTime = 0;
-                    currentTime = 0;
                 }
                 break;
             case RESET_PACKET:
