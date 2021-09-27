@@ -1,6 +1,6 @@
 # %%
 # * Imports and initialization
-from time import sleep
+from time import sleep, time
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
 from crccheck.crc import Crc8
@@ -28,7 +28,7 @@ BLE_CHARACTERISTIC_UUID = "0000dfb1-0000-1000-8000-00805f9b34fb"
 BEETLE_2 = 'b0:b1:13:2d:b6:55'
 BEETLE_3 = 'b0:b1:13:2d:b5:0d'
 TEMP_BEETLE = 'b0:b1:13:2d:d4:ca'
-ALL_BEETLE_MAC = [BEETLE_2, TEMP_BEETLE]
+ALL_BEETLE_MAC = [BEETLE_2, BEETLE_3, TEMP_BEETLE]
 
 
 # * Handshake status of Beetles
@@ -47,6 +47,22 @@ BEETLE_REQUEST_RESET_STATUS = {
     TEMP_BEETLE: False
 }
 
+# ! FOR DEBUGGING AND LOGGING
+BEETLE_CORRUPTION_NUM = {
+    # BEETLE_1: 0,
+    BEETLE_2: 0,
+    BEETLE_3: 0,
+    TEMP_BEETLE: 0
+}
+
+BEETLE_OKAY_NUM = {
+    # BEETLE_1: 0,
+    BEETLE_2: 0,
+    BEETLE_3: 0,
+    TEMP_BEETLE: 0
+}
+
+start = 0
 
 # %%
 
@@ -62,9 +78,11 @@ class Delegate(DefaultDelegate):
     def handleNotification(self, cHandle, data):
         # logging.info("#DEBUG#: Printing Raw Data here: %s. Length: %s" % (data, len(data)))
 
+        self.buffer += data
+
         # Handshake completed. Handle data packets
         if (BEETLE_HANDSHAKE_STATUS[self.mac_addr]):
-            self.buffer += data
+            
             raw_packet_data = self.buffer[0: 20]
 
             # Received EMG Packet 4 bytes
@@ -116,19 +134,27 @@ class Delegate(DefaultDelegate):
                 self.sendDataToUltra96(parsed_packet_data)
                 self.buffer = self.buffer[20:]
 
+                logging.info("Corruption stats: %s" % BEETLE_CORRUPTION_NUM)
+                logging.info("Okay stats: %s" % BEETLE_OKAY_NUM)
+
             # Corrupted buffer. Move forward by one byte at a time
             else:
-                logging.info("#DEBUG#: Corrupted! Buffer %s" % (self.buffer[0:20]))
+                # logging.info("#DEBUG#: Corrupted! Buffer %s" % (self.buffer[0:20]))
                 # BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                BEETLE_CORRUPTION_NUM[self.mac_addr] += 1
                 self.buffer = self.buffer[20:]
 
         # Received ACK packet
-        elif (len(data) == 2):
+        elif (len(data) == 2) or (self.buffer[0] == 65):
             # 'A', CRC8
-            received_packet = struct.unpack('!cc', data)
+            received_packet = struct.unpack('!cc', self.buffer[0:2])
+            self.buffer = self.buffer[2:]
             if (received_packet[0] == b'A'):
                 BEETLE_HANDSHAKE_STATUS[self.mac_addr] = True
-                # logging.info('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
+                logging.info('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
+
+        else:
+            BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
 
     # * Checks checksum by indicating the length of packet used to calculate checksum
     def checkCRC(self, length):
@@ -138,7 +164,8 @@ class Delegate(DefaultDelegate):
 
     # TODO Change this to external comms code in the future
     def sendDataToUltra96(self, data):
-        logging.info("From %s: %s" % (self.mac_addr, data))
+        BEETLE_OKAY_NUM[self.mac_addr] += 1
+        # logging.info("From %s: %s" % (self.mac_addr, data))
 
 
 class BeetleThread(threading.Thread):
@@ -166,8 +193,9 @@ class BeetleThread(threading.Thread):
                     bytes(HELLO, 'utf-8'), withResponse=False)
                 logging.info("%s H packets sent to Beetle %s" %
                       (counter, self.beetle_periobj.addr))
+                counter += 1
 
-                # May be a case of fault handshake.
+                # May be a case of faulty handshake.
                 # Beetle think handshake has completed but laptop doesn't
                 if counter % 20 == 0:
                     logging.info(
@@ -176,13 +204,12 @@ class BeetleThread(threading.Thread):
 
                 # True if received packet from Beetle. Return ACK
                 if self.beetle_periobj.waitForNotifications(3):
-                    logging.info("Successful connection with %s" %
-                          self.beetle_periobj.addr)
+                    # logging.info("Successful connection with %s" %
+                    #       self.beetle_periobj.addr)
                     # May throw BTLEEXcpetion
                     self.serial_characteristic.write(
                         bytes(ACK, 'utf-8'), withResponse=False)
 
-                counter += 1
             return True
 
         except BTLEDisconnectError:
@@ -280,7 +307,6 @@ class Initialize:
             except:
                 logging.info(
                     "#DEBUG#: Failed to create peripheral for %s. Retrying..." % dev.addr)
-                sleep(1)
                 beetle = Peripheral(dev.addr)
 
             beetle.setDelegate(Delegate(dev.addr))
@@ -301,6 +327,8 @@ if __name__ == '__main__':
     allThreads = []
     for found_beetle in beetle_peripherals:
         allThreads.append(BeetleThread(found_beetle))
+
+    start = time()
     
     for beetleThread in allThreads:
         beetleThread.start()
