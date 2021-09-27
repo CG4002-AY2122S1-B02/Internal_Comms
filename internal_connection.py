@@ -6,6 +6,7 @@ import struct
 from crccheck.crc import Crc8
 import logging
 import os
+from multiprocessing import Process
 
 
 # * Different Packet Types
@@ -169,14 +170,20 @@ class Delegate(DefaultDelegate):
 
 
 class BeetleThread():
-    def __init__(self, beetle_peripheral_object):
+    def __init__(self, mac):
+        logging.info("#DEBUG# Attempting connection to %s" % mac)
+        beetle_peripheral_object = Peripheral(mac)
+        beetle_peripheral_object.withDelegate(Delegate(mac))
 
         self.beetle_periobj = beetle_peripheral_object
         self.serial_service = self.beetle_periobj.getServiceByUUID(
             BLE_SERVICE_UUID)
         self.serial_characteristic = self.serial_service.getCharacteristics()[
             0]
-        self.start_handshake()
+        status = self.start_handshake()
+        if status:
+            self.run()
+        
 
     # * Initiate the start of handshake sequence with Beetle
     def start_handshake(self):
@@ -317,22 +324,26 @@ class Initialize:
 if __name__ == '__main__':
     # * Setup Logging
     logging.basicConfig(
-        format = "%(threadName)s %(message)s",
+        format = "%(processName)s %(message)s",
         level = logging.INFO
     )
-
-    # beetle_peripherals = Initialize.start_peripherals()
     
     start = time()
 
     for mac in ALL_BEETLE_MAC:
+        
+        beetle_process = Process(target = BeetleThread, args = (mac, ))
+        beetle_process.start()
+        
 
-        pid = os.fork()
+    # for mac in ALL_BEETLE_MAC:
 
-        if pid > 0:
-            logging.info("Spawning Child Process")
-        else: 
-            logging.info("#DEBUG# Attempting connection to %s" % mac)
-            beetle = Peripheral(mac)
-            beetle.withDelegate(Delegate(mac))
-            BeetleThread(beetle).run()
+    #     pid = os.fork()
+
+    #     if pid > 0:
+    #         logging.info("Spawning Child Process")
+    #     else: 
+    #         logging.info("#DEBUG# Attempting connection to %s" % mac)
+    #         beetle = Peripheral(mac)
+    #         beetle.withDelegate(Delegate(mac))
+    #         BeetleThread(beetle).run()
