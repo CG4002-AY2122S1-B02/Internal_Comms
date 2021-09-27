@@ -3,7 +3,7 @@
 
 // * Constants
 #define BAUD_RATE 115200
-#define SAMPLING_PERIOD 100 // 20ms, so 50Hz
+#define SAMPLING_PERIOD 20 // 20ms, so 50Hz
 #define EMG_SAMPLING_PERIOD 10 // 10ms, so 100Hz
 #define TIMESTAMP_PERIOD 5000 // 5 seconds, so 0.2Hz
 #define HELLO_PACKET 'H'
@@ -19,8 +19,6 @@ unsigned long currentTime = 0;
 unsigned long previousPacketTime = 0;
 unsigned long previousEMGPacketTime = 0;
 unsigned long previousTimestampPacketTime = 0;
-
-unsigned int sequenceNumber = 0;
 
 // * Handshake status
 bool handshakeStart = false;
@@ -55,14 +53,6 @@ CRC8 crc;
 // * Calculate CRC8 for checksum
 uint8_t calcCRC8(uint8_t *data, int len) {
     return crc8(data, len);
-}
-
-// * Write 2 byte unsigned int SN to Serial (Little Endian!)
-void writeSNToSerial() {
-    twoByteBuf[1] = sequenceNumber & 255;
-    twoByteBuf[0] = (sequenceNumber >> 8) & 255;
-    Serial.write(twoByteBuf, sizeof(twoByteBuf));
-    crc.add(twoByteBuf, sizeof(twoByteBuf));
 }
 
 // * Write 2 byte signed integer data to Serial (Little Endian!)
@@ -120,10 +110,8 @@ void readEMGData() {
 // * |_____/|______|_| \_|_____/  |_|     \____/|_| \_|\_____|
 //
 
-// * Total 4 bytes currently
+// * Total 2 bytes currently
 void sendACKPacket(char packetType) {
-
-    writeSNToSerial(); // Two bytes SN and add to CRC
 
     // One byte packet type and add to CRC
     Serial.write(ACK_PACKET);
@@ -131,14 +119,11 @@ void sendACKPacket(char packetType) {
 
     Serial.write(crc.getCRC()); // One byte checksum
 
-    sequenceNumber++; // Increase sequence number after packet is sent out
     crc.restart(); // Restart crc caclulation
 }
 
-// * Total 16 bytes currently + 4 byte padding
+// * Total 14 bytes currently + 6 byte paddings
 void sendDataPacket() {
-
-    writeSNToSerial(); // Two bytes SN and add to CRC
 
     // One byte packet type and add to CRC
     Serial.write(DATA_PACKET);
@@ -162,15 +147,14 @@ void sendDataPacket() {
     Serial.write(0);
     Serial.write(0);
     Serial.write(0);
+    Serial.write(0);
+    Serial.write(0);
 
-    sequenceNumber++;
     crc.restart();
 }
 
-// * Total 6 bytes + 14 bytes padding
+// * Total 4 bytes + 16 bytes padding
 void sendEMGPacket() {
-
-    writeSNToSerial(); // Two bytes SN
 
     // One byte packet type and add to CRC
     Serial.write(EMG_PACKET);
@@ -199,15 +183,14 @@ void sendEMGPacket() {
     Serial.write(0);
     Serial.write(0);
     Serial.write(0);
+    Serial.write(0);
+    Serial.write(0);
 
-    sequenceNumber++;
     crc.restart();
 }
 
-// * Total 8 bytes + 12 bytes padding
+// * Total 6 bytes + 14 bytes padding
 void sendTimestampPacket() {
-
-    writeSNToSerial(); // Two bytes SN
 
     // One byte packet type and add to CRC
     Serial.write(TIMESTAMP);
@@ -231,8 +214,9 @@ void sendTimestampPacket() {
     Serial.write(0);
     Serial.write(0);
     Serial.write(0);
+    Serial.write(0);
+    Serial.write(0);
 
-    sequenceNumber++;
     crc.restart();
 }
 
@@ -266,6 +250,7 @@ void loop() {
                 handshakeStart = true;
                 handshakeEnd = false;
                 sendACKPacket(ACK_PACKET);
+                Serial.flush();
                 break;
             case ACK_PACKET:
                 // Received last ACK from laptop. Handshake complete
@@ -304,6 +289,7 @@ void loop() {
             previousTimestampPacketTime = currentTime;
         }
 
+        Serial.flush();
     }
 
 }
