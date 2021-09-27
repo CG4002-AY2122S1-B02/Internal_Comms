@@ -1,6 +1,6 @@
 # %%
 # * Imports and initialization
-from time import sleep
+from time import sleep, time
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
 from crccheck.crc import Crc8
@@ -28,7 +28,7 @@ BLE_CHARACTERISTIC_UUID = "0000dfb1-0000-1000-8000-00805f9b34fb"
 BEETLE_2 = 'b0:b1:13:2d:b6:55'
 BEETLE_3 = 'b0:b1:13:2d:b5:0d'
 TEMP_BEETLE = 'b0:b1:13:2d:d4:ca'
-ALL_BEETLE_MAC = [BEETLE_2, TEMP_BEETLE]
+ALL_BEETLE_MAC = [BEETLE_2, BEETLE_3, TEMP_BEETLE]
 
 
 # * Handshake status of Beetles
@@ -47,14 +47,22 @@ BEETLE_REQUEST_RESET_STATUS = {
     TEMP_BEETLE: False
 }
 
-# * Sequence number of Beetles
-BEETLE_SEQUENCE_NUMBER = {
+# ! FOR DEBUGGING AND LOGGING
+BEETLE_CORRUPTION_NUM = {
     # BEETLE_1: 0,
     BEETLE_2: 0,
     BEETLE_3: 0,
     TEMP_BEETLE: 0
 }
 
+BEETLE_OKAY_NUM = {
+    # BEETLE_1: 0,
+    BEETLE_2: 0,
+    BEETLE_3: 0,
+    TEMP_BEETLE: 0
+}
+
+start = 0
 
 # %%
 
@@ -70,88 +78,83 @@ class Delegate(DefaultDelegate):
     def handleNotification(self, cHandle, data):
         # logging.info("#DEBUG#: Printing Raw Data here: %s. Length: %s" % (data, len(data)))
 
+        self.buffer += data
+
         # Handshake completed. Handle data packets
         if (BEETLE_HANDSHAKE_STATUS[self.mac_addr]):
-            self.buffer += data
+            
+            raw_packet_data = self.buffer[0: 20]
 
-            # Check received sequence number matches current sequence number
-            # Based on what is the packet type, retrieve specific number of bytes
+            # Received EMG Packet 4 bytes
+            if (self.buffer[0] == 69 and len(self.buffer) >= 20):  # * ASCII Code E (EMG)
+                emg_packet_data = raw_packet_data[0: 4]
+                parsed_packet_data = struct.unpack(
+                    '!chc', emg_packet_data)
 
-            decodedSequenceNumber = struct.unpack('!H', self.buffer[0:2])
-            # logging.info("#DEBUG Buffer: %s vs Tracked: %s" % (decodedSequenceNumber[0], BEETLE_SEQUENCE_NUMBER[self.mac_addr]))
-            if (decodedSequenceNumber[0] == BEETLE_SEQUENCE_NUMBER[self.mac_addr]):
-                # logging.info("#DEBUG#: Buffer's char: %s" % (self.buffer[2]))
+                if not self.checkCRC(3):
+                    logging.info(
+                        "#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
+                    self.buffer = b''
+                    BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                    return
 
-                # Received EMG Packet 6 bytes
-                if (self.buffer[2] == 69 and len(self.buffer) >= 6):  # * ASCII Code E (EMG)
-                    raw_packet_data = self.buffer[0: 6]
-                    parsed_packet_data = struct.unpack(
-                        '!Hchc', raw_packet_data)
+                self.sendDataToUltra96(parsed_packet_data)
+                self.buffer = self.buffer[20:]
 
-                    if not self.checkCRC(5):
-                        logging.info(
-                            "#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
-                        BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
-                        return
+            # Received Data Packet 14 bytes
+            # * ASCII Code D (DATA)
+            elif (self.buffer[0] == 68 and len(self.buffer) >= 20):
+                data_packet_data = raw_packet_data[0: 14]
+                parsed_packet_data = struct.unpack(
+                    '!chhhhhhc', data_packet_data)
 
-                    self.sendDataToUltra96(parsed_packet_data)
-                    self.buffer = self.buffer[6:]
-                    BEETLE_SEQUENCE_NUMBER[self.mac_addr] = decodedSequenceNumber[0] + 1
-
-                # Received Data Packet 16 bytes
-                # * ASCII Code D (DATA)
-                elif (self.buffer[2] == 68 and len(self.buffer) >= 16):
-                    raw_packet_data = self.buffer[0: 16]
-                    parsed_packet_data = struct.unpack(
-                        '!Hchhhhhhc', raw_packet_data)
-
-                    if not self.checkCRC(15):
-                        logging.info(
-                            "#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
-                        BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
-                        return
-
-                    self.sendDataToUltra96(parsed_packet_data)
-                    self.buffer = self.buffer[16:]
-                    BEETLE_SEQUENCE_NUMBER[self.mac_addr] = decodedSequenceNumber[0] + 1
-
-                # Received Timestamp packet 8 bytes
-                elif (self.buffer[2] == 84 and len(self.buffer) >= 8):  # * ASCII Code T
-                    raw_packet_data = self.buffer[0: 8]
-                    parsed_packet_data = struct.unpack(
-                        '!HcLc', raw_packet_data)
-
-                    if not self.checkCRC(7):
-                        logging.info(
-                            "#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
-                        BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
-                        return
-
-                    self.sendDataToUltra96(parsed_packet_data)
-                    self.buffer = self.buffer[8:]
-                    BEETLE_SEQUENCE_NUMBER[self.mac_addr] = decodedSequenceNumber[0] + 1
-
-                # Corrupted buffer. Move forward by one byte at a time
-                else:
-                    logging.info("#DEBUG#: Corrupted! Buffer %s" % (self.buffer[0:20]))
+                if not self.checkCRC(13):
+                    logging.info(
+                        "#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
                     BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
                     self.buffer = b''
+                    return
 
+                self.sendDataToUltra96(parsed_packet_data)
+                self.buffer = self.buffer[20:]
+
+            # Received Timestamp packet 6 bytes
+            elif (self.buffer[0] == 84 and len(self.buffer) >= 20):  # * ASCII Code T
+                timestamp_packet_data = raw_packet_data[0: 6]
+                parsed_packet_data = struct.unpack(
+                    '!cLc', timestamp_packet_data)
+
+                if not self.checkCRC(5):
+                    logging.info(
+                        "#DEBUG#: CRC Checksum doesn't match for %s. Resetting..." % self.mac_addr)
+                    BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                    self.buffer = b''
+                    return
+
+                self.sendDataToUltra96(parsed_packet_data)
+                self.buffer = self.buffer[20:]
+
+                logging.info("Corruption stats: %s" % BEETLE_CORRUPTION_NUM)
+                logging.info("Okay stats: %s" % BEETLE_OKAY_NUM)
+
+            # Corrupted buffer. Move forward by one byte at a time
             else:
-                # Sequence number and received packets are out of sync
-                # Request for reset by turning on a flag
-                logging.info("#DEBUG#: Buffer SN %s and tracked SN %s out of sync!" % (self.buffer[0:20], BEETLE_SEQUENCE_NUMBER[self.mac_addr]))
-                BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
-                self.buffer = b''
+                # logging.info("#DEBUG#: Corrupted! Buffer %s" % (self.buffer[0:20]))
+                # BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
+                BEETLE_CORRUPTION_NUM[self.mac_addr] += 1
+                self.buffer = self.buffer[20:]
 
         # Received ACK packet
-        elif (len(data) == 4):
-            # ISN, 'A', CRC8
-            received_packet = struct.unpack('!Hcc', data)
-            if (received_packet[1] == b'A' and received_packet[0] == BEETLE_SEQUENCE_NUMBER[self.mac_addr]):
+        elif (len(data) == 2) or (self.buffer[0] == 65):
+            # 'A', CRC8
+            received_packet = struct.unpack('!cc', self.buffer[0:2])
+            self.buffer = self.buffer[2:]
+            if (received_packet[0] == b'A'):
                 BEETLE_HANDSHAKE_STATUS[self.mac_addr] = True
-                BEETLE_SEQUENCE_NUMBER[self.mac_addr] = received_packet[0] + 1
-                # logging.info('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
+                logging.info('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
+
+        else:
+            BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
 
     # * Checks checksum by indicating the length of packet used to calculate checksum
     def checkCRC(self, length):
@@ -161,7 +164,8 @@ class Delegate(DefaultDelegate):
 
     # TODO Change this to external comms code in the future
     def sendDataToUltra96(self, data):
-        logging.info("From %s: %s" % (self.mac_addr, data))
+        BEETLE_OKAY_NUM[self.mac_addr] += 1
+        # logging.info("From %s: %s" % (self.mac_addr, data))
 
 
 class BeetleThread(threading.Thread):
@@ -189,23 +193,23 @@ class BeetleThread(threading.Thread):
                     bytes(HELLO, 'utf-8'), withResponse=False)
                 logging.info("%s H packets sent to Beetle %s" %
                       (counter, self.beetle_periobj.addr))
+                counter += 1
 
-                # May be a case of fault handshake.
+                # May be a case of faulty handshake.
                 # Beetle think handshake has completed but laptop doesn't
-                if counter % 30 == 0:
+                if counter % 20 == 0:
                     logging.info(
                         "Too many H packets sent. Arduino may be out of state. Resetting Beetle")
                     self.reset()
 
                 # True if received packet from Beetle. Return ACK
                 if self.beetle_periobj.waitForNotifications(3):
-                    logging.info("Successful connection with %s" %
-                          self.beetle_periobj.addr)
+                    # logging.info("Successful connection with %s" %
+                    #       self.beetle_periobj.addr)
                     # May throw BTLEEXcpetion
                     self.serial_characteristic.write(
                         bytes(ACK, 'utf-8'), withResponse=False)
 
-                counter += 1
             return True
 
         except BTLEDisconnectError:
@@ -231,7 +235,6 @@ class BeetleThread(threading.Thread):
         self.serial_characteristic.write(
             bytes(RESET, 'utf-8'), withResponse=False)
         logging.info("Resetting Beetle %s" % self.beetle_periobj.addr)
-        BEETLE_SEQUENCE_NUMBER[self.beetle_periobj.addr] = 0
         BEETLE_HANDSHAKE_STATUS[self.beetle_periobj.addr] = False
         BEETLE_REQUEST_RESET_STATUS[self.beetle_periobj.addr] = False
         self.reconnect()
@@ -304,7 +307,6 @@ class Initialize:
             except:
                 logging.info(
                     "#DEBUG#: Failed to create peripheral for %s. Retrying..." % dev.addr)
-                sleep(1)
                 beetle = Peripheral(dev.addr)
 
             beetle.setDelegate(Delegate(dev.addr))
@@ -325,6 +327,8 @@ if __name__ == '__main__':
     allThreads = []
     for found_beetle in beetle_peripherals:
         allThreads.append(BeetleThread(found_beetle))
+
+    start = time()
     
     for beetleThread in allThreads:
         beetleThread.start()
