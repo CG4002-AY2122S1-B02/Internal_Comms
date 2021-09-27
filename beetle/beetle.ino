@@ -135,7 +135,7 @@ void sendACKPacket(char packetType) {
     crc.restart(); // Restart crc caclulation
 }
 
-// * Total 16 bytes currently + 4 byte padding
+// * Total 16 bytes currently
 void sendDataPacket() {
 
     writeSNToSerial(); // Two bytes SN and add to CRC
@@ -157,17 +157,11 @@ void sendDataPacket() {
 
     Serial.write(crc.getCRC()); // One byte checksum
 
-    // Padding
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-
     sequenceNumber++;
     crc.restart();
 }
 
-// * Total 6 bytes + 14 bytes padding
+// * Total 6 bytes
 void sendEMGPacket() {
 
     writeSNToSerial(); // Two bytes SN
@@ -184,27 +178,11 @@ void sendEMGPacket() {
 
     Serial.write(crc.getCRC()); // One byte checksum
 
-    // Padding
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-
     sequenceNumber++;
     crc.restart();
 }
 
-// * Total 8 bytes + 12 bytes padding
+// * Total 8 bytes
 void sendTimestampPacket() {
 
     writeSNToSerial(); // Two bytes SN
@@ -217,20 +195,6 @@ void sendTimestampPacket() {
     writeLongToSerial(currentTime);
 
     Serial.write(crc.getCRC()); // One byte checksum
-
-    // Padding
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
-    Serial.write(0);
 
     sequenceNumber++;
     crc.restart();
