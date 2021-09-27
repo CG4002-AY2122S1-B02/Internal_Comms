@@ -4,8 +4,8 @@ from time import sleep, time
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
 from crccheck.crc import Crc8
-import threading
 import logging
+import os
 
 
 # * Different Packet Types
@@ -168,9 +168,8 @@ class Delegate(DefaultDelegate):
         # logging.info("From %s: %s" % (self.mac_addr, data))
 
 
-class BeetleThread(threading.Thread):
+class BeetleThread():
     def __init__(self, beetle_peripheral_object):
-        threading.Thread.__init__(self)
 
         self.beetle_periobj = beetle_peripheral_object
         self.serial_service = self.beetle_periobj.getServiceByUUID(
@@ -322,13 +321,18 @@ if __name__ == '__main__':
         level = logging.INFO
     )
 
-    beetle_peripherals = Initialize.start_peripherals()
-
-    allThreads = []
-    for found_beetle in beetle_peripherals:
-        allThreads.append(BeetleThread(found_beetle))
-
-    start = time()
+    # beetle_peripherals = Initialize.start_peripherals()
     
-    for beetleThread in allThreads:
-        beetleThread.start()
+    start = time()
+
+    for mac in ALL_BEETLE_MAC:
+
+        pid = os.fork()
+
+        if pid > 0:
+            logging.info("Spawning Child Process")
+        else: 
+            logging.info("#DEBUG# Attempting connection to %s" % mac)
+            beetle = Peripheral(mac)
+            beetle.withDelegate(Delegate(mac))
+            BeetleThread(beetle).run()
