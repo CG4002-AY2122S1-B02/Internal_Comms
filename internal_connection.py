@@ -29,7 +29,7 @@ BLE_CHARACTERISTIC_UUID = "0000dfb1-0000-1000-8000-00805f9b34fb"
 BEETLE_2 = 'b0:b1:13:2d:b6:55'
 BEETLE_3 = 'b0:b1:13:2d:b5:0d'
 TEMP_BEETLE = 'b0:b1:13:2d:d4:ca'
-ALL_BEETLE_MAC = [BEETLE_2, BEETLE_3, TEMP_BEETLE]
+ALL_BEETLE_MAC = [TEMP_BEETLE]
 
 
 # * Handshake status of Beetles
@@ -258,6 +258,8 @@ class BeetleThread():
         except Exception as e:
             logging.info("#DEBUG#: Disconnection! Reason: %s" % e)
             self.reconnect()
+            self.reset()
+            self.start_handshake()
             self.run()
 
 
