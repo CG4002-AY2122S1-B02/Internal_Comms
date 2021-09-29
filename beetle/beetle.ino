@@ -3,7 +3,7 @@
 
 // * Constants
 #define BAUD_RATE 115200
-#define SAMPLING_PERIOD 20 // 20ms, so 50Hz
+#define SAMPLING_PERIOD 40 // 40ms, so 25Hz
 #define EMG_SAMPLING_PERIOD 10 // 10ms, so 100Hz
 #define TIMESTAMP_PERIOD 5000 // 5 seconds, so 0.2Hz
 #define HELLO_PACKET 'H'
