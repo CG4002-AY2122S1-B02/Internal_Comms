@@ -1,6 +1,7 @@
 # %%
 # * Imports and initialization
 from time import sleep, time
+from typing import Match
 from bluepy.btle import BTLEDisconnectError, Scanner, DefaultDelegate, Peripheral
 import struct
 from crccheck.crc import Crc8
@@ -82,7 +83,7 @@ class Delegate(DefaultDelegate):
 
         # Handshake completed. Handle data packets
         if (BEETLE_HANDSHAKE_STATUS[self.mac_addr]):
-            
+
             raw_packet_data = self.buffer[0: 20]
 
             # Received EMG Packet 4 bytes
@@ -134,8 +135,8 @@ class Delegate(DefaultDelegate):
                 self.sendDataToUltra96(parsed_packet_data)
                 self.buffer = self.buffer[20:]
 
-                logging.info("Corruption stats: %s" % BEETLE_CORRUPTION_NUM)
-                logging.info("Okay stats: %s" % BEETLE_OKAY_NUM)
+                logging.info("Corruption stats for %s: %s" % (self.mac_addr, BEETLE_CORRUPTION_NUM[self.mac_addr]))
+                logging.info("Okay stats for %s: %s" % (self.mac_addr, BEETLE_OKAY_NUM[self.mac_addr]))
 
             # Corrupted buffer. Move forward by one byte at a time
             else:
@@ -145,13 +146,12 @@ class Delegate(DefaultDelegate):
                 self.buffer = self.buffer[20:]
 
         # Received ACK packet
-        elif (len(data) == 2) or (self.buffer[0] == 65):
+        elif (self.buffer[0] == 65):
             # 'A', CRC8
-            received_packet = struct.unpack('!cc', self.buffer[0:2])
             self.buffer = self.buffer[2:]
-            if (received_packet[0] == b'A'):
-                BEETLE_HANDSHAKE_STATUS[self.mac_addr] = True
-                logging.info('#DEBUG#: Received ACK packet from %s' % self.mac_addr)
+            BEETLE_HANDSHAKE_STATUS[self.mac_addr] = True
+            logging.info('#DEBUG#: Received ACK packet from %s' %
+                         self.mac_addr)
 
         else:
             BEETLE_REQUEST_RESET_STATUS[self.mac_addr] = True
@@ -165,7 +165,7 @@ class Delegate(DefaultDelegate):
     # TODO Change this to external comms code in the future
     def sendDataToUltra96(self, data):
         BEETLE_OKAY_NUM[self.mac_addr] += 1
-        # logging.info("From %s: %s" % (self.mac_addr, data))
+        logging.info("From %s: %s" % (self.mac_addr, data))
 
 
 class BeetleThread():
@@ -191,7 +191,7 @@ class BeetleThread():
                 self.serial_characteristic.write(
                     bytes(HELLO, 'utf-8'), withResponse=False)
                 logging.info("%s H packets sent to Beetle %s" %
-                      (counter, self.beetle_periobj.addr))
+                             (counter, self.beetle_periobj.addr))
                 counter += 1
 
                 # May be a case of faulty handshake.
@@ -213,19 +213,21 @@ class BeetleThread():
 
         except BTLEDisconnectError:
             logging.info("Beetle %s disconnected. Attempt reconnection..." %
-                  self.beetle_periobj.addr)
+                         self.beetle_periobj.addr)
             self.reconnect()
             self.start_handshake()
 
     def reconnect(self):
-        logging.info("Attempting reconnection with %s" % self.beetle_periobj.addr)
+        logging.info("Attempting reconnection with %s" %
+                     self.beetle_periobj.addr)
         try:
             self.beetle_periobj.disconnect()
-            sleep(2)
+            sleep(1)
             self.beetle_periobj.connect(self.beetle_periobj.addr)
             self.beetle_periobj.withDelegate(
                 Delegate(self.beetle_periobj.addr))
-            logging.info("Reconnection successful with %s" % self.beetle_periobj.addr)
+            logging.info("Reconnection successful with %s" %
+                         self.beetle_periobj.addr)
         except Exception as e:
             logging.info("#DEBUG#: Error reconnecting. Reason: %s" % e)
             self.reconnect()
@@ -243,12 +245,11 @@ class BeetleThread():
     def run(self):
         try:
             while True:
-                # If sequence number is messed up, break and reset
+                # Break and reset
                 if BEETLE_REQUEST_RESET_STATUS[self.beetle_periobj.addr]:
                     break
 
                 if self.beetle_periobj.waitForNotifications(2) and not BEETLE_REQUEST_RESET_STATUS[self.beetle_periobj.addr]:
-                    # TODO CONTINUE HANDLING BYTE BUFFER
                     continue
 
             self.reset()
@@ -257,8 +258,6 @@ class BeetleThread():
         except Exception as e:
             logging.info("#DEBUG#: Disconnection! Reason: %s" % e)
             self.reconnect()
-            self.reset()
-            self.start_handshake()
             self.run()
 
 
@@ -312,17 +311,18 @@ class Initialize:
             created_beetle_peripherals.append(beetle)
         return created_beetle_peripherals
 
+
 # %%
 # ! Actual main code
 if __name__ == '__main__':
     # * Setup Logging
     logging.basicConfig(
-        format = "%(threadName)s %(message)s",
-        level = logging.INFO
+        format="%(process)d %(message)s",
+        level=logging.INFO
     )
 
     # beetle_peripherals = Initialize.start_peripherals()
-    
+
     start = time()
 
     for mac in ALL_BEETLE_MAC:
@@ -331,8 +331,15 @@ if __name__ == '__main__':
 
         if pid > 0:
             logging.info("Spawning Child Process")
-        else: 
+        else:
             logging.info("#DEBUG# Attempting connection to %s" % mac)
-            beetle = Peripheral(mac)
+            try:
+                # May throw BTLEException
+                beetle = Peripheral(mac)
+            except:
+                logging.info(
+                    "#DEBUG#: Failed to create peripheral for %s. Retrying once more." % mac)
+                sleep(2)
+                beetle = Peripheral(mac)
             beetle.withDelegate(Delegate(mac))
             BeetleThread(beetle).run()
