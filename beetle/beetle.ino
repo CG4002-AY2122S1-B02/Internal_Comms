@@ -80,26 +80,26 @@ void (* resetBeetle) (void) = 0;
 // * Generate fake accelerometer and rotational data
 void readData() {
     // ? Random generation of data
-    // accelX = random(-32768, 32767);
-    // accelY = random(-32768, 32767);
-    // accelZ = random(-32768, 32767);
-    // rotX = random(-32768, 32767);
-    // rotY = random(-32768, 32767);
-    // rotZ = random(-32768, 32767);
-    accelX = -6000;
-    accelY = 13880;
-    accelZ = -1380;
-    rotX = 915;
-    rotY = -68;
-    rotZ = -49;
+    accelX = random(-32768, 32767);
+    accelY = random(-32768, 32767);
+    accelZ = random(-32768, 32767);
+    rotX = random(-32768, 32767);
+    rotY = random(-32768, 32767);
+    rotZ = random(-32768, 32767);
+    // accelX = -6000;
+    // accelY = 13880;
+    // accelZ = -1380;
+    // rotX = 915;
+    // rotY = -68;
+    // rotZ = -49;
 }
 
 // ? Read data from EMG sensors (IN THE FUTURE)
 // * Generate fake EMG data
 void readEMGData() {
     // ? Random generation of data
-    // emgData = random(0, 1023)
-    emgData = 200;
+    emgData = random(0, 1023)
+    // emgData = 200;
 }
 
 // *   _____ ______ _   _ _____    ______ _    _ _   _  _____
@@ -273,6 +273,7 @@ void loop() {
         if (currentTime - previousEMGPacketTime > EMG_SAMPLING_PERIOD) {
             readEMGData();
             sendEMGPacket();
+            Serial.flush();
             previousEMGPacketTime = currentTime;
         }
 
@@ -280,16 +281,17 @@ void loop() {
         if (currentTime - previousPacketTime > SAMPLING_PERIOD) {
             readData();
             sendDataPacket();
+            Serial.flush();
             previousPacketTime = currentTime;
         }
 
         // Send timestamp packet for synchronisation
         if (currentTime - previousTimestampPacketTime > TIMESTAMP_PERIOD) {
             sendTimestampPacket();
+            Serial.flush();
             previousTimestampPacketTime = currentTime;
         }
 
-        Serial.flush();
     }
 
 }
