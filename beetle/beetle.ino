@@ -98,7 +98,7 @@ void readData() {
 // * Generate fake EMG data
 void readEMGData() {
     // ? Random generation of data
-    emgData = random(0, 1023)
+    emgData = random(0, 1023);
     // emgData = 200;
 }
 
